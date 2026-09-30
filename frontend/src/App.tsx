@@ -1,0 +1,21 @@
+import { useEffect, useState } from 'react';
+
+type Result = {id:number;title:string;matchPercentage:number;matchingKeywords:string[];missingKeywords:string[];suggestions:string[];createdAt:string};
+type Summary = Pick<Result,'id'|'title'|'matchPercentage'|'createdAt'>;
+const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+
+export default function App(){
+ const [resume,setResume]=useState(''),[job,setJob]=useState(''),[title,setTitle]=useState(''),[result,setResult]=useState<Result|null>(null),[history,setHistory]=useState<Summary[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+ async function loadHistory(){try{const r=await fetch(`${API}/api/analyses`);if(!r.ok)throw Error();setHistory(await r.json());}catch{setError('Cannot reach the API. Start the backend and check its URL.');}}
+ useEffect(()=>{void loadHistory();},[]);
+ async function analyze(e:React.FormEvent){e.preventDefault();setBusy(true);setError('');try{const r=await fetch(`${API}/api/analyze`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,resumeText:resume,jobDescriptionText:job})});const data=await r.json();if(!r.ok)throw Error(data.fieldErrors?Object.values(data.fieldErrors).join(' '):data.error||'Analysis failed');setResult(data);await loadHistory();}catch(err){setError(err instanceof Error?err.message:'Request failed');}finally{setBusy(false);}}
+ async function openItem(id:number){try{const r=await fetch(`${API}/api/analyses/${id}`);if(!r.ok)throw Error('Could not load this analysis');setResult(await r.json());setError('');}catch(err){setError(err instanceof Error?err.message:'Request failed');}}
+ async function remove(id:number){try{const r=await fetch(`${API}/api/analyses/${id}`,{method:'DELETE'});if(!r.ok)throw Error('Could not delete analysis');if(result?.id===id)setResult(null);await loadHistory();}catch(err){setError(err instanceof Error?err.message:'Request failed');}}
+ return <main className="wrap"><header><div><span className="eyebrow">CAREER TOOLKIT</span><h1>Resume Match Analyzer</h1><p>Compare your resume with a job description using a transparent skills checklist.</p></div></header>
+ {error&&<div className="error" role="alert">{error}</div>}
+ <section className="grid"><form className="panel" onSubmit={analyze}><h2>New analysis</h2><label>Role title <input value={title} onChange={e=>setTitle(e.target.value)} maxLength={120} placeholder="e.g. Backend Developer"/></label><div className="fields"><label>Resume text<textarea required minLength={1} maxLength={30000} value={resume} onChange={e=>setResume(e.target.value)} placeholder="Paste your resume text"/></label><label>Job description<textarea required minLength={20} maxLength={30000} value={job} onChange={e=>setJob(e.target.value)} placeholder="Paste the job description"/></label></div><button disabled={busy}>{busy?'Analyzing…':'Analyze match'}</button><small>Use text only. Files are not uploaded. Results are suggestions, not hiring advice.</small></form>
+ <aside className="panel"><h2>Saved analyses</h2>{history.length===0?<p className="muted">Your analysis history will appear here.</p>:<ul className="history">{history.map(x=><li key={x.id}><button className="link" onClick={()=>void openItem(x.id)}>{x.title} · {x.matchPercentage}%</button><button className="delete" aria-label={`Delete ${x.title}`} onClick={()=>void remove(x.id)}>Delete</button></li>)}</ul>}</aside></section>
+ {result&&<section className="panel result"><div className="score"><span>{result.matchPercentage}%</span><p>dictionary skill match</p></div><h2>{result.title}</h2><div className="fields"><div><h3>Skills found</h3><Tags values={result.matchingKeywords} empty="No dictionary skills matched." good/></div><div><h3>Skills to review</h3><Tags values={result.missingKeywords} empty="No dictionary skills missing."/></div></div><h3>Suggestions</h3><ul>{result.suggestions.map((s,i)=><li key={i}>{s}</li>)}</ul></section>}
+ <footer>Rule-based matching recognizes a limited built-in skill list; it does not assess experience quality or equivalent skills.</footer></main>
+}
+function Tags({values,empty,good}:{values:string[];empty:string;good?:boolean}){return values.length?<div className="tags">{values.map(v=><span className={good?'good':''} key={v}>{v}</span>)}</div>:<p className="muted">{empty}</p>}
